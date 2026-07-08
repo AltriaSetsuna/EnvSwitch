@@ -63,6 +63,9 @@ GCC library directories are intentionally not exported globally through
 absolute path, and global GCC library paths can make unrelated programs load the
 wrong `libtinfo`, `libstdc++`, or runtime support libraries.
 
+For build tools, envswitch does export GCC compile/link-time search paths through
+`LIBRARY_PATH`, `PKG_CONFIG_PATH`, and `CMAKE_PREFIX_PATH`.
+
 Managed compiler and CUDA variables are only cleared when they point into this
 project tree.
 

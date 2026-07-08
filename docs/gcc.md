@@ -34,6 +34,9 @@ CXX
 CMAKE_C_COMPILER
 CMAKE_CXX_COMPILER
 CMAKE_ARGS
+LIBRARY_PATH
+PKG_CONFIG_PATH
+CMAKE_PREFIX_PATH
 ```
 
 It also prepends:
@@ -59,6 +62,9 @@ drivers.
 The GCC module does not export its `lib` or `lib64` directories through
 `LD_LIBRARY_PATH` globally. That keeps ordinary shell tools from accidentally
 loading compiler-package libraries.
+
+For build tools, it exports compile/link-time search paths through
+`LIBRARY_PATH`, `PKG_CONFIG_PATH`, and `CMAKE_PREFIX_PATH`.
 
 ## Common Commands
 

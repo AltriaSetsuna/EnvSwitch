@@ -30,6 +30,8 @@ if [ -x "$GCC12" ] && [ -x "$CUDA128/bin/nvcc" ]; then
     clean_bash "test \"\${CC:-}\" = \"$GCC12\""
     clean_bash "test \"\$(command -v gcc)\" = \"$ROOT/modules/gcc/versions/gcc-12/bin/gcc\""
     clean_bash "gcc --version | grep -q '12'"
+    clean_bash "case \":\${LIBRARY_PATH:-}:\" in *\":$ROOT/modules/gcc/versions/gcc-12/lib:\"*) ;; *) exit 1 ;; esac"
+    clean_bash "case \":\${CMAKE_PREFIX_PATH:-}:\" in *\":$ROOT/modules/gcc/versions/gcc-12:\"*) ;; *) exit 1 ;; esac"
     clean_bash "test \"\${CUDA_HOME:-}\" = \"$CUDA128\""
 
     if [ -x "$GCC14" ]; then
@@ -39,6 +41,7 @@ if [ -x "$GCC12" ] && [ -x "$CUDA128/bin/nvcc" ]; then
 
     clean_bash 'envswitch off >/dev/null; test -z "${CC:-}"'
     clean_bash 'test -z "${CC:-}"'
+    clean_bash 'test -z "${LIBRARY_PATH:-}"'
 else
     if [ ! -x "$GCC12" ]; then
         output="$(clean_bash 'envswitch on' 2>&1 || true)"
