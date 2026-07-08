@@ -28,6 +28,8 @@ if [ -x "$GCC12" ] && [ -x "$CUDA128/bin/nvcc" ]; then
 
     clean_bash 'envswitch status' | grep -q 'state: enabled'
     clean_bash "test \"\${CC:-}\" = \"$GCC12\""
+    clean_bash "test \"\$(command -v gcc)\" = \"$ROOT/modules/gcc/versions/gcc-12/bin/gcc\""
+    clean_bash "gcc --version | grep -q '12'"
     clean_bash "test \"\${CUDA_HOME:-}\" = \"$CUDA128\""
 
     if [ -x "$GCC14" ]; then

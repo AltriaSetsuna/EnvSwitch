@@ -44,6 +44,18 @@ $ENVSWITCH_GCC_HOME/bin
 
 to `PATH`.
 
+`envswitch` ensures the local GCC prefix exposes common command names:
+
+```text
+gcc
+g++
+cc
+c++
+```
+
+For conda-forge GCC installs, these point at the target-prefixed compiler
+drivers.
+
 The GCC module does not export its `lib` or `lib64` directories through
 `LD_LIBRARY_PATH` globally. That keeps ordinary shell tools from accidentally
 loading compiler-package libraries.

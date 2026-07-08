@@ -35,6 +35,11 @@ envswitch status
 Open a new terminal or reconnect over SSH and the same enabled state will be
 loaded automatically.
 
+If `envswitch on` prints success but `gcc --version` still shows the system GCC,
+the current shell has not loaded the shell hook yet. Run `source ~/.bashrc` or
+open a new terminal, then run `envswitch on` again. `type envswitch` should say
+that `envswitch` is a shell function.
+
 To disable the managed environment:
 
 ```bash
