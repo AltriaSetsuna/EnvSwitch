@@ -75,7 +75,8 @@ symlink.
 
 The default download sources are:
 
-- GCC uses the Tsinghua conda-forge mirror with micromamba, mamba, or conda.
+- GCC uses the Tsinghua conda-forge mirror with micromamba, mamba, conda, or an
+  envswitch-bootstrapped private micromamba in the user's cache.
 - CUDA Toolkit uses NVIDIA's China CDN and NVIDIA's toolkit-only runfile
   installer.
 

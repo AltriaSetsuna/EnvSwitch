@@ -15,6 +15,7 @@ readonly ENVSWITCH_TUNA_NVIDIA_CONDA="https://mirrors.tuna.tsinghua.edu.cn/anaco
 readonly ENVSWITCH_TUNA_CUDA_BASE="https://mirrors.tuna.tsinghua.edu.cn/cuda"
 readonly ENVSWITCH_NVIDIA_CUDA_CN_BASE="https://developer.download.nvidia.cn/compute/cuda"
 readonly ENVSWITCH_NVIDIA_CUDA_GLOBAL_BASE="https://developer.download.nvidia.com/compute/cuda"
+readonly ENVSWITCH_MICROMAMBA_PACKAGE="micromamba-2.8.1-0.tar.bz2"
 
 usage() {
     cat <<'USAGE'
@@ -460,10 +461,48 @@ install_with_conda() {
     conda create -y -p "$prefix" --override-channels "$@"
 }
 
+envswitch_micromamba() {
+    printf '%s/bin/micromamba\n' "$ENVSWITCH_CACHE_HOME"
+}
+
 is_empty_dir() {
     local dir="$1"
     [[ -d "$dir" ]] || return 1
     [[ -z "$(find "$dir" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]
+}
+
+bootstrap_micromamba() {
+    local micromamba
+    local package
+    local url
+    local extract_dir
+
+    micromamba="$(envswitch_micromamba)"
+    if [[ -x "$micromamba" ]]; then
+        info "using bundled micromamba: $micromamba"
+        return 0
+    fi
+
+    package="$ENVSWITCH_CACHE_HOME/downloads/$ENVSWITCH_MICROMAMBA_PACKAGE"
+    url="$ENVSWITCH_TUNA_CONDA_FORGE/linux-64/$ENVSWITCH_MICROMAMBA_PACKAGE"
+    extract_dir="$ENVSWITCH_CACHE_HOME/micromamba-bootstrap"
+
+    download_file "$url" "$package"
+
+    rm -rf "$extract_dir"
+    mkdir -p "$extract_dir" "$ENVSWITCH_CACHE_HOME/bin"
+    tar -xjf "$package" -C "$extract_dir" bin/micromamba
+
+    if [[ ! -x "$extract_dir/bin/micromamba" ]]; then
+        rm -rf "$extract_dir"
+        die "micromamba package did not contain bin/micromamba"
+    fi
+
+    mv "$extract_dir/bin/micromamba" "$micromamba"
+    chmod +x "$micromamba"
+    rm -rf "$extract_dir"
+
+    info "bootstrapped micromamba: $micromamba"
 }
 
 install_conda_prefix() {
@@ -483,7 +522,8 @@ install_conda_prefix() {
     elif have_command conda; then
         install_with_conda "$prefix" "$@"
     else
-        die "no installer found. Install micromamba, mamba, or conda, then retry."
+        bootstrap_micromamba
+        "$(envswitch_micromamba)" create -y -p "$prefix" --override-channels "$@"
     fi
 }
 

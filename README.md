@@ -82,7 +82,8 @@ used by the previous layout.
 
 - GCC downloads conda-forge compiler packages through the Tsinghua conda-forge
   mirror. It uses `micromamba`, then `mamba`, then `conda`, whichever is
-  available first.
+  available first. If none is installed, envswitch bootstraps a private
+  `micromamba` into the user's cache from the same mirror.
 - CUDA Toolkit downloads the NVIDIA runfile from NVIDIA's China CDN and installs
   only the toolkit into the current user's repo checkout. This path does not
   require conda and does not install drivers.
@@ -114,6 +115,7 @@ modules/
 legacy-scripts/
 docs/
 tests/
+.cache/envswitch/      # user cache; created outside the repo by default
 ```
 
 ## Manual Versions
