@@ -25,3 +25,14 @@ pyyaml
 rich
 tqdm
 typer
+
+# JSON parsing, serialization, and high-performance alternatives
+orjson
+ujson
+simplejson
+ijson
+
+# JSON querying, transformation, and validation
+jq
+jsonschema
+jsonlines
