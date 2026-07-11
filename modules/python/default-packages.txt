@@ -16,6 +16,7 @@ pytest
 pytest-cov
 hypothesis
 ruff
+python-dotenv
 
 # Common interactive and utility packages
 ipython
