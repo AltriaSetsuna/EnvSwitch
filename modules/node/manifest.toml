@@ -1,0 +1,17 @@
+[module]
+name = "node"
+default = "24.18.0"
+manager = "official-binary"
+platforms = ["linux-x64"]
+
+[versions]
+available = ["24.18.0"]
+
+[versions."24.18.0"]
+release_line = "lts"
+codename = "Krypton"
+asset = "node-v24.18.0-linux-x64.tar.xz"
+url = "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz"
+sha256 = "55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742"
+minimum_kernel = "4.18"
+minimum_glibc = "2.28"

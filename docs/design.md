@@ -1,17 +1,17 @@
 # Design
 
-EnvSwitch separates project logic from installed GCC, CUDA Toolkit, and Python
-packages. The repository is organized around modules, where each module owns its
-version manifest, installation directory, default version, and environment
-application rules.
+EnvSwitch separates project logic from installed GCC, CUDA Toolkit, Python, and
+Node.js packages. The repository is organized around modules, where each module
+owns its version manifest, installation directory, default version, and
+environment application rules.
 
 ## Goals
 
-- Keep GCC, CUDA Toolkit, and Python states independent.
+- Keep GCC, CUDA Toolkit, Python, and Node.js states independent.
 - Support one-command enable and disable flows for the current user.
 - Persist state across new terminals and SSH reconnects.
 - Avoid editing system directories or requiring root privileges.
-- Keep large local GCC, CUDA, and Python installs out of git.
+- Keep large local GCC, CUDA, Python, and Node.js installs out of git.
 - Preserve compatibility with the previous GCC source scripts.
 
 ## State Model
@@ -24,27 +24,30 @@ EnvSwitch stores user state under:
 ~/.config/EnvSwitch/profile.sh
 ```
 
-`config` records the project root and default versions. `state` uses version 2
+`config` records the project root and default versions. `state` uses version 3
 and stores an enabled flag plus selected version for every tool:
 
 ```bash
-ENVS_STATE_VERSION='2'
+ENVS_STATE_VERSION='3'
 ENVS_GCC_ENABLED='0'
 ENVS_GCC_VERSION='12'
 ENVS_CUDA_ENABLED='1'
 ENVS_CUDA_VERSION='12.8'
 ENVS_PYTHON_ENABLED='1'
 ENVS_PYTHON_VERSION='3.12.12'
-ENVS_LAST_ENABLED_MODULES='cuda python'
+ENVS_NODE_ENABLED='1'
+ENVS_NODE_VERSION='24.18.0'
+ENVS_LAST_ENABLED_MODULES='cuda python node'
 ```
 
 `ENVS_LAST_ENABLED_MODULES` lets global `envswitch off` pause all tools and
 global `envswitch on` restore the previous combination. Tool-specific commands
 only mutate the requested module.
 
-Version 1 state is migrated automatically. A legacy enabled state maps to GCC
-and CUDA enabled, while Python starts disabled to avoid changing the user's
-interpreter during an upgrade.
+Version 1 and 2 state is migrated automatically. A version 1 enabled state maps
+to GCC and CUDA enabled. Python starts disabled when migrating version 1, and
+Node.js starts disabled when migrating either older version, avoiding an
+unexpected PATH change during an upgrade.
 
 ## Shell Integration
 
@@ -72,6 +75,7 @@ The generated profile removes paths under:
 modules/gcc/versions/*/bin
 modules/cuda/versions/*/{bin,lib64,extras/CUPTI/lib64}
 modules/python/versions/*/bin
+modules/node/versions/*/bin
 ```
 
 before applying the selected environment. This prevents duplicate `PATH` and
@@ -86,9 +90,9 @@ wrong `libtinfo`, `libstdc++`, or runtime support libraries.
 For build tools, EnvSwitch does export GCC compile/link-time search paths through
 `LIBRARY_PATH`, `PKG_CONFIG_PATH`, and `CMAKE_PREFIX_PATH`.
 
-Managed compiler, CUDA, and Python variables are only cleared when they point
-into this project tree. EnvSwitch does not set `PYTHONHOME`, `PYTHONPATH`, or
-`VIRTUAL_ENV`.
+Managed compiler, CUDA, Python, and Node.js variables are only cleared when they
+point into this project tree. EnvSwitch does not set `PYTHONHOME`, `PYTHONPATH`,
+`VIRTUAL_ENV`, or a global npm prefix.
 
 ## Installed Artifacts
 
@@ -105,6 +109,9 @@ The default download sources are:
 - Python uses a pinned `python-build-standalone` release and verifies its SHA256
   before extraction. It then installs `modules/python/default-packages.txt`
   using `uv pip`, with the fetched interpreter's own `pip` as the fallback.
+- Node.js uses a pinned official Linux x64 archive from nodejs.org and verifies
+  its SHA256 checksum. The installer checks the architecture, kernel, glibc, and
+  extracted executable before registering the prefix.
 
 CUDA can also be fetched from NVIDIA's global host with `--source global`, from
 the Tsinghua CUDA mirror with `--source tuna`, or from Tsinghua Anaconda mirrors

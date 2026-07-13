@@ -12,3 +12,5 @@ __pycache__/
 !/modules/cuda/versions/.gitkeep
 /modules/python/versions/*
 !/modules/python/versions/.gitkeep
+/modules/node/versions/*
+!/modules/node/versions/.gitkeep

@@ -1,7 +1,8 @@
 # EnvSwitch
 
-EnvSwitch is a per-user environment switcher for local GCC, CUDA Toolkit, and
-Python installs. Each tool has independent enabled and selected-version state,
+EnvSwitch is a per-user environment switcher for local GCC, CUDA Toolkit,
+Python, and Node.js installs. Each tool has independent enabled and
+selected-version state,
 while a `clash on`-style global `on`/`off` flow can restore or pause the current
 combination across terminals and SSH reconnects.
 
@@ -10,10 +11,11 @@ The default environment is:
 - GCC: `gcc-12`
 - CUDA Toolkit: `cuda-12.8`
 - Python: `python-3.12.12`
+- Node.js: `node-24.18.0` (LTS)
 
-Installed GCC, CUDA Toolkit, and Python directories are intentionally ignored by
-git. The repository contains the switcher, manifests, docs, tests, and empty
-placeholder directories; users download or add versions locally.
+Installed GCC, CUDA Toolkit, Python, and Node.js directories are intentionally
+ignored by git. The repository contains the switcher, manifests, docs, tests,
+and empty placeholder directories; users download or add versions locally.
 
 ## Quick Start
 
@@ -33,7 +35,7 @@ envswitch fetch defaults --no-default-packages
 envswitch on
 envswitch status
 
-# Or enable only CUDA. GCC and Python keep their current states.
+# Or enable only CUDA. GCC, Python, and Node.js keep their current states.
 envswitch off
 envswitch use cuda
 ```
@@ -79,9 +81,12 @@ envswitch fetch cuda 12.8 --source global
 envswitch fetch cuda 12.8 --provider conda
 envswitch fetch python
 envswitch fetch python --no-default-packages
+envswitch fetch node
+envswitch fetch node 24.18.0
 envswitch link gcc 12 /path/to/gcc-prefix
 envswitch link cuda 12.8 /path/to/cuda-prefix
 envswitch link python 3.12.12 /path/to/python-prefix
+envswitch link node 24.18.0 /path/to/node-prefix
 envswitch on
 envswitch on cuda
 envswitch off
@@ -92,9 +97,12 @@ envswitch use gcc 14
 envswitch use cuda
 envswitch use cuda 12.8
 envswitch use python
+envswitch use node
+envswitch use node 24.18.0
 envswitch default gcc 12
 envswitch default cuda 12.8
 envswitch default python 3.12.12
+envswitch default node 24.18.0
 ```
 
 For `fetch <tool>` and `use <tool>`, omitting the version selects that tool's
@@ -122,6 +130,10 @@ used by the previous layout.
   bundled artifact currently targets Linux x86_64. After fetching Python,
   EnvSwitch installs `modules/python/default-packages.txt` through `uv pip` when
   `uv` is available, or through the fetched Python's own `pip` otherwise.
+- Node.js downloads the pinned official Linux x64 binary archive from
+  nodejs.org, verifies its SHA256 checksum, and extracts it into the repo. The
+  bundled Node.js 24 definition requires Linux kernel 4.18 and glibc 2.28 or
+  newer; Ubuntu 20.04 and newer satisfy these requirements.
 
 Default Python packages use the Tsinghua PyPI mirror. Set
 `ENVS_PYPI_INDEX_URL` to override the package index. Pass
@@ -159,6 +171,12 @@ modules/
     versions/
       .gitkeep
       python-3.12.12/ # ignored, local install
+  node/
+    default -> versions/node-24.18.0
+    manifest.toml
+    versions/
+      .gitkeep
+      node-24.18.0/   # ignored, local install
 legacy-scripts/
 docs/
 tests/
@@ -175,6 +193,7 @@ when the toolchain already exists elsewhere:
 envswitch link gcc 12 /path/to/gcc-prefix
 envswitch link cuda 12.8 /path/to/cuda-prefix
 envswitch link python 3.12.12 /path/to/python-prefix
+envswitch link node 24.18.0 /path/to/node-prefix
 ```
 
 You can also populate the ignored version directories manually:
@@ -205,3 +224,12 @@ For Python, `envswitch` expects:
 ```text
 modules/python/versions/python-<version>/bin/python3
 ```
+
+For Node.js, `envswitch` expects:
+
+```text
+modules/node/versions/node-<version>/bin/node
+```
+
+See [docs/node.md](docs/node.md) for the Node.js platform requirements and
+module-specific commands.

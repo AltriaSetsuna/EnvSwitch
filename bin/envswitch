@@ -20,14 +20,17 @@ readonly ENVS_TUNA_CUDA_BASE="https://mirrors.tuna.tsinghua.edu.cn/cuda"
 readonly ENVS_TUNA_PYPI="https://pypi.tuna.tsinghua.edu.cn/simple"
 readonly ENVS_NVIDIA_CUDA_CN_BASE="https://developer.download.nvidia.cn/compute/cuda"
 readonly ENVS_NVIDIA_CUDA_GLOBAL_BASE="https://developer.download.nvidia.com/compute/cuda"
+readonly ENVS_NODE_DIST_BASE="https://nodejs.org/dist"
 readonly ENVS_MICROMAMBA_PACKAGE="micromamba-2.8.1-0.tar.bz2"
-readonly ENVS_MODULES="gcc cuda python"
+readonly ENVS_MODULES="gcc cuda python node"
 readonly ENVS_PYTHON_STANDALONE_RELEASE="20260211"
 readonly ENVS_PYTHON_STANDALONE_SHA256="1dbaa624a09e15afe7efbdac08d42993135a68db8d34f986ef6977a6d77bdc3c"
+readonly ENVS_NODE_DEFAULT_VERSION="24.18.0"
+readonly ENVS_NODE_LINUX_X64_SHA256="55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742"
 
 usage() {
     cat <<'USAGE'
-EnvSwitch - switch per-user GCC, CUDA toolkit, and Python environments
+EnvSwitch - switch per-user GCC, CUDA toolkit, Python, and Node.js environments
 
 Usage:
   envswitch install            Install shell hook for current and future terminals
@@ -38,20 +41,24 @@ Usage:
   envswitch fetch cuda [ver]   Download CUDA; omitted version uses the default
   envswitch fetch python [ver] Download Python and default packages
   envswitch fetch python [ver] --no-default-packages
+  envswitch fetch node [ver]   Download Node.js; omitted version uses the default
   envswitch fetch cuda [ver] --source tuna|official|global
   envswitch fetch cuda [ver] --provider conda
   envswitch link gcc <ver> <path>
   envswitch link cuda <ver> <path>
   envswitch link python <ver> <path>
+  envswitch link node <ver> <path>
   envswitch on [tool]          Restore all tools, or enable one tool
   envswitch off [tool]         Disable all tools, or disable one tool
   envswitch status             Show each tool's independent state
   envswitch use gcc [version]  Enable GCC; omitted version uses the default
   envswitch use cuda [version] Enable CUDA; omitted version uses the default
   envswitch use python [ver]   Enable Python; omitted version uses the default
+  envswitch use node [version] Enable Node.js; omitted version uses the default
   envswitch default gcc <ver>  Change default GCC version
   envswitch default cuda <ver> Change default CUDA toolkit version
   envswitch default python <ver>
+  envswitch default node <ver>
   envswitch help               Show this help
 
 After install, envswitch on/off/use refreshes the current shell and
@@ -98,6 +105,13 @@ normalize_python_version() {
     printf '%s\n' "$version"
 }
 
+normalize_node_version() {
+    local version="${1#node-}"
+    version="${version#v}"
+    [[ "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] || die "invalid Node.js version: $1"
+    printf '%s\n' "$version"
+}
+
 gcc_home_for() {
     local version
     version="$(normalize_gcc_version "$1")"
@@ -114,6 +128,12 @@ cuda_home_for() {
     local version
     version="$(normalize_cuda_version "$1")"
     printf '%s/modules/cuda/versions/cuda-%s\n' "$ENVS_ROOT" "$version"
+}
+
+node_home_for() {
+    local version
+    version="$(normalize_node_version "$1")"
+    printf '%s/modules/node/versions/node-%s\n' "$ENVS_ROOT" "$version"
 }
 
 assert_gcc_exists() {
@@ -135,6 +155,12 @@ assert_python_exists() {
     [[ -x "$home/bin/python3" ]] || die "Python executable missing in: $home"
 }
 
+assert_node_exists() {
+    local home="$1"
+    [[ -d "$home" ]] || die "Node.js version not found: $home. Run: envswitch fetch node ${home##*node-}"
+    [[ -x "$home/bin/node" ]] || die "Node.js executable missing in: $home"
+}
+
 default_from_symlink() {
     local module="$1"
     local link="$ENVS_ROOT/modules/$module/default"
@@ -145,6 +171,7 @@ default_from_symlink() {
             gcc) printf '12\n' ;;
             cuda) printf '12.8\n' ;;
             python) printf '3.12.12\n' ;;
+            node) printf '%s\n' "$ENVS_NODE_DEFAULT_VERSION" ;;
             *) return 1 ;;
         esac
     fi
@@ -155,6 +182,7 @@ load_config() {
     ENVS_DEFAULT_GCC_VERSION="$(default_from_symlink gcc)"
     ENVS_DEFAULT_CUDA_VERSION="$(default_from_symlink cuda)"
     ENVS_DEFAULT_PYTHON_VERSION="$(default_from_symlink python)"
+    ENVS_DEFAULT_NODE_VERSION="$(default_from_symlink node)"
 
     if [[ -r "$ENVS_CONFIG_FILE" ]]; then
         # shellcheck disable=SC1090
@@ -167,6 +195,7 @@ load_config() {
     ENVS_DEFAULT_GCC_VERSION="${ENVS_DEFAULT_GCC_VERSION:-${ENVSWITCH_DEFAULT_GCC_VERSION:-12}}"
     ENVS_DEFAULT_CUDA_VERSION="${ENVS_DEFAULT_CUDA_VERSION:-${ENVSWITCH_DEFAULT_CUDA_VERSION:-12.8}}"
     ENVS_DEFAULT_PYTHON_VERSION="${ENVS_DEFAULT_PYTHON_VERSION:-3.12.12}"
+    ENVS_DEFAULT_NODE_VERSION="${ENVS_DEFAULT_NODE_VERSION:-$ENVS_NODE_DEFAULT_VERSION}"
 
     ENVS_ROOT="$runtime_root"
 }
@@ -179,6 +208,8 @@ load_state() {
     ENVS_CUDA_VERSION=''
     ENVS_PYTHON_ENABLED=''
     ENVS_PYTHON_VERSION=''
+    ENVS_NODE_ENABLED=''
+    ENVS_NODE_VERSION=''
     ENVS_LAST_ENABLED_MODULES=''
     ENVS_ENABLED=''
 
@@ -190,23 +221,26 @@ load_state() {
         source "$ENVS_LEGACY_CONFIG_HOME/state"
     fi
 
-    if [[ "${ENVS_STATE_VERSION:-}" != "2" ]]; then
+    if [[ "${ENVS_STATE_VERSION:-}" != "3" ]]; then
         local legacy_enabled="${ENVS_ENABLED:-${ENVSWITCH_ENABLED:-0}}"
         ENVS_GCC_ENABLED="${ENVS_GCC_ENABLED:-$legacy_enabled}"
         ENVS_CUDA_ENABLED="${ENVS_CUDA_ENABLED:-$legacy_enabled}"
         ENVS_PYTHON_ENABLED="${ENVS_PYTHON_ENABLED:-0}"
+        ENVS_NODE_ENABLED="${ENVS_NODE_ENABLED:-0}"
         if [[ "$legacy_enabled" == "1" ]]; then
             ENVS_LAST_ENABLED_MODULES="${ENVS_LAST_ENABLED_MODULES:-gcc cuda}"
         fi
     fi
 
-    ENVS_STATE_VERSION='2'
+    ENVS_STATE_VERSION='3'
     ENVS_GCC_ENABLED="${ENVS_GCC_ENABLED:-0}"
     ENVS_GCC_VERSION="${ENVS_GCC_VERSION:-${ENVSWITCH_GCC_VERSION:-$ENVS_DEFAULT_GCC_VERSION}}"
     ENVS_CUDA_ENABLED="${ENVS_CUDA_ENABLED:-0}"
     ENVS_CUDA_VERSION="${ENVS_CUDA_VERSION:-${ENVSWITCH_CUDA_VERSION:-$ENVS_DEFAULT_CUDA_VERSION}}"
     ENVS_PYTHON_ENABLED="${ENVS_PYTHON_ENABLED:-0}"
     ENVS_PYTHON_VERSION="${ENVS_PYTHON_VERSION:-$ENVS_DEFAULT_PYTHON_VERSION}"
+    ENVS_NODE_ENABLED="${ENVS_NODE_ENABLED:-0}"
+    ENVS_NODE_VERSION="${ENVS_NODE_VERSION:-$ENVS_DEFAULT_NODE_VERSION}"
     ENVS_LAST_ENABLED_MODULES="${ENVS_LAST_ENABLED_MODULES:-}"
 }
 
@@ -217,19 +251,22 @@ ENVS_ROOT='$ENVS_ROOT'
 ENVS_DEFAULT_GCC_VERSION='${ENVS_DEFAULT_GCC_VERSION:-12}'
 ENVS_DEFAULT_CUDA_VERSION='${ENVS_DEFAULT_CUDA_VERSION:-12.8}'
 ENVS_DEFAULT_PYTHON_VERSION='${ENVS_DEFAULT_PYTHON_VERSION:-3.12.12}'
+ENVS_DEFAULT_NODE_VERSION='${ENVS_DEFAULT_NODE_VERSION:-$ENVS_NODE_DEFAULT_VERSION}'
 EOF
 }
 
 write_state() {
     ensure_config_dir
     cat >"$ENVS_STATE_FILE" <<EOF
-ENVS_STATE_VERSION='2'
+ENVS_STATE_VERSION='3'
 ENVS_GCC_ENABLED='${ENVS_GCC_ENABLED:-0}'
 ENVS_GCC_VERSION='${ENVS_GCC_VERSION:-${ENVS_DEFAULT_GCC_VERSION:-12}}'
 ENVS_CUDA_ENABLED='${ENVS_CUDA_ENABLED:-0}'
 ENVS_CUDA_VERSION='${ENVS_CUDA_VERSION:-${ENVS_DEFAULT_CUDA_VERSION:-12.8}}'
 ENVS_PYTHON_ENABLED='${ENVS_PYTHON_ENABLED:-0}'
 ENVS_PYTHON_VERSION='${ENVS_PYTHON_VERSION:-${ENVS_DEFAULT_PYTHON_VERSION:-3.12.12}}'
+ENVS_NODE_ENABLED='${ENVS_NODE_ENABLED:-0}'
+ENVS_NODE_VERSION='${ENVS_NODE_VERSION:-${ENVS_DEFAULT_NODE_VERSION:-$ENVS_NODE_DEFAULT_VERSION}}'
 ENVS_LAST_ENABLED_MODULES='${ENVS_LAST_ENABLED_MODULES:-}'
 EOF
 }
@@ -241,6 +278,7 @@ normalize_module_version() {
         gcc) normalize_gcc_version "$version" ;;
         cuda) normalize_cuda_version "$version" ;;
         python) normalize_python_version "$version" ;;
+        node) normalize_node_version "$version" ;;
         *) die "unknown module: $module" ;;
     esac
 }
@@ -250,6 +288,7 @@ module_default_version() {
         gcc) printf '%s\n' "$ENVS_DEFAULT_GCC_VERSION" ;;
         cuda) printf '%s\n' "$ENVS_DEFAULT_CUDA_VERSION" ;;
         python) printf '%s\n' "$ENVS_DEFAULT_PYTHON_VERSION" ;;
+        node) printf '%s\n' "$ENVS_DEFAULT_NODE_VERSION" ;;
         *) die "unknown module: $1" ;;
     esac
 }
@@ -261,6 +300,7 @@ module_home_for() {
         gcc) gcc_home_for "$version" ;;
         cuda) cuda_home_for "$version" ;;
         python) python_home_for "$version" ;;
+        node) node_home_for "$version" ;;
         *) die "unknown module: $module" ;;
     esac
 }
@@ -272,6 +312,7 @@ assert_module_exists() {
         gcc) assert_gcc_exists "$home" ;;
         cuda) assert_cuda_exists "$home" ;;
         python) assert_python_exists "$home" ;;
+        node) assert_node_exists "$home" ;;
         *) die "unknown module: $module" ;;
     esac
 }
@@ -283,6 +324,7 @@ module_is_installed() {
         gcc) [[ -x "$home/bin/x86_64-conda-linux-gnu-gcc" && -x "$home/bin/x86_64-conda-linux-gnu-g++" ]] ;;
         cuda) [[ -x "$home/bin/nvcc" ]] ;;
         python) [[ -x "$home/bin/python3" ]] ;;
+        node) [[ -x "$home/bin/node" ]] ;;
         *) return 1 ;;
     esac
 }
@@ -292,6 +334,7 @@ module_enabled() {
         gcc) [[ "$ENVS_GCC_ENABLED" == "1" ]] ;;
         cuda) [[ "$ENVS_CUDA_ENABLED" == "1" ]] ;;
         python) [[ "$ENVS_PYTHON_ENABLED" == "1" ]] ;;
+        node) [[ "$ENVS_NODE_ENABLED" == "1" ]] ;;
         *) return 1 ;;
     esac
 }
@@ -303,6 +346,7 @@ module_set_enabled() {
         gcc) ENVS_GCC_ENABLED="$value" ;;
         cuda) ENVS_CUDA_ENABLED="$value" ;;
         python) ENVS_PYTHON_ENABLED="$value" ;;
+        node) ENVS_NODE_ENABLED="$value" ;;
         *) die "unknown module: $module" ;;
     esac
 }
@@ -312,6 +356,7 @@ module_selected_version() {
         gcc) printf '%s\n' "$ENVS_GCC_VERSION" ;;
         cuda) printf '%s\n' "$ENVS_CUDA_VERSION" ;;
         python) printf '%s\n' "$ENVS_PYTHON_VERSION" ;;
+        node) printf '%s\n' "$ENVS_NODE_VERSION" ;;
         *) die "unknown module: $1" ;;
     esac
 }
@@ -323,6 +368,7 @@ module_set_version() {
         gcc) ENVS_GCC_VERSION="$version" ;;
         cuda) ENVS_CUDA_VERSION="$version" ;;
         python) ENVS_PYTHON_VERSION="$version" ;;
+        node) ENVS_NODE_VERSION="$version" ;;
         *) die "unknown module: $module" ;;
     esac
 }
@@ -377,6 +423,8 @@ __envswitch_remove_path_entries() {
             "$ENVS_ROOT"/modules/cuda/versions/*/extras/CUPTI/lib64 | \
             "$ENVS_ROOT"/modules/python/versions/* | \
             "$ENVS_ROOT"/modules/python/versions/*/bin | \
+            "$ENVS_ROOT"/modules/node/versions/* | \
+            "$ENVS_ROOT"/modules/node/versions/*/bin | \
             "$ENVS_LEGACY_ROOT"/modules/* | \
             "$ENVS_LEGACY_ROOT"/modules/*/* | \
             "$ENVS_LEGACY_ROOT"/modules/*/*/* | \
@@ -435,12 +483,14 @@ __envswitch_clear_exports() {
     unset ENVS_GCC_HOME
     unset ENVS_CUDA_HOME
     unset ENVS_PYTHON_HOME
+    unset ENVS_NODE_HOME
     unset TOOLCHAIN_ROOT
     unset ENVSWITCH_ROOT
     unset ENVSWITCH_TOOLCHAIN_ROOT
     unset ENVSWITCH_GCC_HOME
     unset ENVSWITCH_CUDA_HOME
     unset ENVSWITCH_PYTHON_HOME
+    unset ENVSWITCH_NODE_HOME
     unset ENVSWITCH_SHELL_HOOK_ACTIVE
     __envswitch_unset_if_managed CUDA_HOME
     __envswitch_unset_if_managed CUDA_PATH
@@ -470,19 +520,22 @@ __envswitch_apply() {
     # shellcheck disable=SC1090
     . "$state_file"
 
-    if [ "${ENVS_STATE_VERSION:-}" != "2" ]; then
+    if [ "${ENVS_STATE_VERSION:-}" != "3" ]; then
         local legacy_enabled="${ENVS_ENABLED:-0}"
         ENVS_GCC_ENABLED="${ENVS_GCC_ENABLED:-$legacy_enabled}"
         ENVS_CUDA_ENABLED="${ENVS_CUDA_ENABLED:-$legacy_enabled}"
         ENVS_PYTHON_ENABLED="${ENVS_PYTHON_ENABLED:-0}"
+        ENVS_NODE_ENABLED="${ENVS_NODE_ENABLED:-0}"
     fi
 
     local gcc_version="${ENVS_GCC_VERSION:-${ENVS_DEFAULT_GCC_VERSION:-12}}"
     local cuda_version="${ENVS_CUDA_VERSION:-${ENVS_DEFAULT_CUDA_VERSION:-12.8}}"
     local python_version="${ENVS_PYTHON_VERSION:-${ENVS_DEFAULT_PYTHON_VERSION:-3.12.12}}"
+    local node_version="${ENVS_NODE_VERSION:-${ENVS_DEFAULT_NODE_VERSION:-24.18.0}}"
     local gcc_home="$ENVS_ROOT/modules/gcc/versions/gcc-$gcc_version"
     local cuda_home="$ENVS_ROOT/modules/cuda/versions/cuda-$cuda_version"
     local python_home="$ENVS_ROOT/modules/python/versions/python-$python_version"
+    local node_home="$ENVS_ROOT/modules/node/versions/node-$node_version"
 
     if [ "${ENVS_GCC_ENABLED:-0}" = "1" ] && [ -d "$gcc_home" ]; then
         export ENVS_TOOLCHAIN_ROOT="$gcc_home"
@@ -518,6 +571,11 @@ __envswitch_apply() {
     if [ "${ENVS_PYTHON_ENABLED:-0}" = "1" ] && [ -d "$python_home" ]; then
         export ENVS_PYTHON_HOME="$python_home"
         __envswitch_prepend_path PATH "$python_home/bin"
+    fi
+
+    if [ "${ENVS_NODE_ENABLED:-0}" = "1" ] && [ -d "$node_home" ]; then
+        export ENVS_NODE_HOME="$node_home"
+        __envswitch_prepend_path PATH "$node_home/bin"
     fi
 }
 
@@ -681,6 +739,7 @@ uninstall_shell() {
     ENVS_GCC_ENABLED=0
     ENVS_CUDA_ENABLED=0
     ENVS_PYTHON_ENABLED=0
+    ENVS_NODE_ENABLED=0
     write_state
     rm -f "$ENVS_PROFILE_FILE" "$ENVS_LEGACY_PROFILE_FILE"
     info "disabled EnvSwitch"
@@ -1207,6 +1266,91 @@ install_python() {
     fi
 }
 
+version_at_least() {
+    local actual="$1"
+    local required="$2"
+    [[ "$(printf '%s\n%s\n' "$required" "$actual" | sort -V | head -n 1)" == "$required" ]]
+}
+
+assert_node_platform_supported() {
+    [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || \
+        die "Node.js $ENVS_NODE_DEFAULT_VERSION download currently supports Linux x86_64 only"
+
+    local glibc_version kernel_version
+    glibc_version="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+    [[ -n "$glibc_version" ]] || die "Node.js official binary requires glibc >= 2.28"
+    version_at_least "$glibc_version" "2.28" || \
+        die "Node.js official binary requires glibc >= 2.28; found $glibc_version"
+
+    kernel_version="$(uname -r | sed 's/[^0-9.].*$//')"
+    version_at_least "$kernel_version" "4.18" || \
+        die "Node.js official support requires Linux kernel >= 4.18; found $(uname -r)"
+}
+
+node_archive_name_for() {
+    local version="$1"
+    printf 'node-v%s-linux-x64.tar.xz\n' "$version"
+}
+
+node_url_for() {
+    local version="$1"
+    printf '%s/v%s/%s\n' "$ENVS_NODE_DIST_BASE" "$version" "$(node_archive_name_for "$version")"
+}
+
+install_node() {
+    local version="${1:-}"
+    [[ -n "$version" ]] || die "usage: envswitch fetch node [version]"
+    version="$(normalize_node_version "$version")"
+
+    case "$version" in
+        24.18.0) ;;
+        *) die "unsupported Node.js version: $version. Supported: 24.18.0" ;;
+    esac
+
+    local prefix
+    prefix="$(node_home_for "$version")"
+    if [[ -x "$prefix/bin/node" ]]; then
+        info "node-$version already installed: $prefix"
+        return 0
+    fi
+
+    assert_node_platform_supported
+    ensure_install_target_available "$prefix" "Node.js"
+
+    local asset archive url staging
+    asset="$(node_archive_name_for "$version")"
+    archive="$ENVS_CACHE_HOME/downloads/$asset"
+    url="$(node_url_for "$version")"
+    staging="${prefix}.installing.$$"
+
+    download_file "$url" "$archive"
+    verify_sha256 "$archive" "$ENVS_NODE_LINUX_X64_SHA256"
+
+    rm -rf "$staging"
+    mkdir -p "$(dirname -- "$prefix")" "$staging"
+    info "installing Node.js $version from the official binary archive"
+    tar -xJf "$archive" -C "$staging" --strip-components=1
+
+    if [[ ! -x "$staging/bin/node" ]]; then
+        rm -rf "$staging"
+        die "Node.js archive completed but bin/node was not installed"
+    fi
+    if [[ "$("$staging/bin/node" --version)" != "v$version" ]]; then
+        rm -rf "$staging"
+        die "installed Node.js binary failed its version check"
+    fi
+    if [[ ! -x "$staging/bin/npm" ]] || ! PATH="$staging/bin:$PATH" "$staging/bin/npm" --version >/dev/null; then
+        rm -rf "$staging"
+        die "installed Node.js npm command failed its startup check"
+    fi
+
+    if is_empty_dir "$prefix"; then
+        rmdir "$prefix"
+    fi
+    mv "$staging" "$prefix"
+    info "installed node-$version: $prefix"
+}
+
 install_toolchain() {
     local module="${1:-defaults}"
     shift || true
@@ -1217,6 +1361,7 @@ install_toolchain() {
             install_gcc "$ENVS_DEFAULT_GCC_VERSION"
             install_cuda "$ENVS_DEFAULT_CUDA_VERSION"
             install_python "$ENVS_DEFAULT_PYTHON_VERSION" "$@"
+            install_node "$ENVS_DEFAULT_NODE_VERSION"
             ;;
         gcc)
             install_gcc "${1:-$ENVS_DEFAULT_GCC_VERSION}"
@@ -1237,7 +1382,10 @@ install_toolchain() {
             fi
             install_python "$version" "$@"
             ;;
-        *) die "usage: envswitch fetch <defaults|gcc|cuda|python> [version]" ;;
+        node)
+            install_node "${1:-$ENVS_DEFAULT_NODE_VERSION}"
+            ;;
+        *) die "usage: envswitch fetch <defaults|gcc|cuda|python|node> [version]" ;;
     esac
 }
 
@@ -1263,7 +1411,7 @@ link_toolchain() {
     local module="${1:-}"
     local version="${2:-}"
     local target="${3:-}"
-    [[ -n "$module" && -n "$version" && -n "$target" ]] || die "usage: envswitch link <gcc|cuda|python> <version> <path>"
+    [[ -n "$module" && -n "$version" && -n "$target" ]] || die "usage: envswitch link <gcc|cuda|python|node> <version> <path>"
 
     load_config
 
@@ -1290,6 +1438,12 @@ link_toolchain() {
             link_path "$(python_home_for "$version")" "$target"
             info "linked python-$version -> $target"
             ;;
+        node)
+            version="$(normalize_node_version "$version")"
+            [[ -x "$target/bin/node" ]] || die "Node.js executable missing in: $target"
+            link_path "$(node_home_for "$version")" "$target"
+            info "linked node-$version -> $target"
+            ;;
         *)
             die "unknown module: $module"
             ;;
@@ -1302,7 +1456,7 @@ link_toolchain() {
 set_default() {
     local module="${1:-}"
     local version="${2:-}"
-    [[ -n "$module" && -n "$version" ]] || die "usage: envswitch default <gcc|cuda|python> <version>"
+    [[ -n "$module" && -n "$version" ]] || die "usage: envswitch default <gcc|cuda|python|node> <version>"
 
     load_config
     case "$module" in
@@ -1330,6 +1484,14 @@ set_default() {
             ln -sfn "versions/python-$version" "$ENVS_ROOT/modules/python/default"
             ENVS_DEFAULT_PYTHON_VERSION="$version"
             ;;
+        node)
+            version="$(normalize_node_version "$version")"
+            local node_home
+            node_home="$(node_home_for "$version")"
+            assert_node_exists "$node_home"
+            ln -sfn "versions/node-$version" "$ENVS_ROOT/modules/node/default"
+            ENVS_DEFAULT_NODE_VERSION="$version"
+            ;;
         *) die "unknown module: $module" ;;
     esac
 
@@ -1341,7 +1503,7 @@ set_default() {
 use_module() {
     local module="${1:-}"
     local version="${2:-}"
-    [[ -n "$module" ]] || die "usage: envswitch use <gcc|cuda|python> [version]"
+    [[ -n "$module" ]] || die "usage: envswitch use <gcc|cuda|python|node> [version]"
 
     load_config
     load_state
@@ -1468,6 +1630,7 @@ disable_env() {
         ENVS_GCC_ENABLED=0
         ENVS_CUDA_ENABLED=0
         ENVS_PYTHON_ENABLED=0
+        ENVS_NODE_ENABLED=0
         info "disabled all modules"
     fi
 
