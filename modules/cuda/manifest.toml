@@ -5,10 +5,13 @@ manager = "nvidia-runfile"
 default_source = "official"
 
 [versions]
-available = ["12.8"]
+available = ["12.8", "13.2"]
 
 [versions."12.8"]
 runfile = "12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run"
+
+[versions."13.2"]
+runfile = "13.2.1/local_installers/cuda_13.2.1_595.58.03_linux.run"
 
 [providers.nvidia-runfile]
 default_base_url = "https://developer.download.nvidia.cn/compute/cuda"
@@ -18,6 +21,7 @@ tuna_base_url = "https://mirrors.tuna.tsinghua.edu.cn/cuda"
 [providers.conda]
 packages = [
   "cuda-toolkit=12.8",
+  "cuda-toolkit=13.2",
 ]
 channels = [
   "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/nvidia",

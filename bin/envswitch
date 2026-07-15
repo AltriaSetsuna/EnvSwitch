@@ -211,6 +211,7 @@ load_state() {
     ENVS_NODE_ENABLED=''
     ENVS_NODE_VERSION=''
     ENVS_LAST_ENABLED_MODULES=''
+    ENVS_LAST_ENABLED_MODULES_SET=''
     ENVS_ENABLED=''
 
     if [[ -r "$ENVS_STATE_FILE" ]]; then
@@ -242,6 +243,13 @@ load_state() {
     ENVS_NODE_ENABLED="${ENVS_NODE_ENABLED:-0}"
     ENVS_NODE_VERSION="${ENVS_NODE_VERSION:-$ENVS_DEFAULT_NODE_VERSION}"
     ENVS_LAST_ENABLED_MODULES="${ENVS_LAST_ENABLED_MODULES:-}"
+    if [[ -z "${ENVS_LAST_ENABLED_MODULES_SET:-}" ]]; then
+        if [[ -n "$ENVS_LAST_ENABLED_MODULES" ]]; then
+            ENVS_LAST_ENABLED_MODULES_SET=1
+        else
+            ENVS_LAST_ENABLED_MODULES_SET=0
+        fi
+    fi
 }
 
 write_config() {
@@ -268,6 +276,7 @@ ENVS_PYTHON_VERSION='${ENVS_PYTHON_VERSION:-${ENVS_DEFAULT_PYTHON_VERSION:-3.12.
 ENVS_NODE_ENABLED='${ENVS_NODE_ENABLED:-0}'
 ENVS_NODE_VERSION='${ENVS_NODE_VERSION:-${ENVS_DEFAULT_NODE_VERSION:-$ENVS_NODE_DEFAULT_VERSION}}'
 ENVS_LAST_ENABLED_MODULES='${ENVS_LAST_ENABLED_MODULES:-}'
+ENVS_LAST_ENABLED_MODULES_SET='${ENVS_LAST_ENABLED_MODULES_SET:-0}'
 EOF
 }
 
@@ -382,6 +391,32 @@ current_enabled_modules() {
         fi
     done
     printf '%s\n' "$enabled"
+}
+
+remember_module_for_global_on() {
+    local requested="$1"
+    local module remembered=""
+
+    for module in $ENVS_MODULES; do
+        case " $ENVS_LAST_ENABLED_MODULES $requested " in
+            *" $module "*) remembered="${remembered:+$remembered }$module" ;;
+        esac
+    done
+    ENVS_LAST_ENABLED_MODULES="$remembered"
+    ENVS_LAST_ENABLED_MODULES_SET=1
+}
+
+sync_global_on_modules_from_current() {
+    ENVS_LAST_ENABLED_MODULES="$(current_enabled_modules)"
+    ENVS_LAST_ENABLED_MODULES_SET=1
+}
+
+merge_current_modules_into_global_on() {
+    local module
+
+    for module in $(current_enabled_modules); do
+        remember_module_for_global_on "$module"
+    done
 }
 
 write_profile() {
@@ -880,8 +915,45 @@ cuda_runfile_path_for() {
     local version="$1"
     case "$version" in
         12.8) printf '%s\n' '12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run' ;;
+        13.2) printf '%s\n' '13.2.1/local_installers/cuda_13.2.1_595.58.03_linux.run' ;;
         *) die "no NVIDIA runfile is configured for CUDA toolkit $version" ;;
     esac
+}
+
+cuda_driver_max_version() {
+    local output
+
+    have_command nvidia-smi || return 1
+    if ! output="$(LC_ALL=C nvidia-smi 2>/dev/null)"; then
+        return 1
+    fi
+
+    if [[ "$output" =~ CUDA[[:space:]]+Version:[[:space:]]*([0-9]+([.][0-9]+)?) ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+assert_cuda_driver_supports() {
+    local requested="$1"
+    local maximum
+
+    if ! maximum="$(cuda_driver_max_version)"; then
+        info "warning: could not query the driver CUDA limit with nvidia-smi; continuing without a compatibility check"
+        return 0
+    fi
+
+    local requested_major requested_minor maximum_major maximum_minor
+    IFS=. read -r requested_major requested_minor <<<"$requested"
+    IFS=. read -r maximum_major maximum_minor <<<"$maximum"
+    requested_minor="${requested_minor:-0}"
+    maximum_minor="${maximum_minor:-0}"
+
+    if ((requested_major > maximum_major || \
+        (requested_major == maximum_major && requested_minor > maximum_minor))); then
+        die "unsupported CUDA toolkit version: $requested. NVIDIA driver supports up to CUDA $maximum according to nvidia-smi"
+    fi
 }
 
 cuda_runfile_url_for() {
@@ -1095,10 +1167,7 @@ install_cuda() {
         esac
     done
 
-    case "$version" in
-        12.8) ;;
-        *) die "unsupported CUDA toolkit version: $version. Supported: 12.8" ;;
-    esac
+    assert_cuda_driver_supports "$version"
 
     local prefix
     prefix="$(cuda_home_for "$version")"
@@ -1459,43 +1528,40 @@ set_default() {
     [[ -n "$module" && -n "$version" ]] || die "usage: envswitch default <gcc|cuda|python|node> <version>"
 
     load_config
+    load_state
     case "$module" in
         gcc)
             version="$(normalize_gcc_version "$version")"
-            local gcc_home
-            gcc_home="$(gcc_home_for "$version")"
-            assert_gcc_exists "$gcc_home"
             ln -sfn "versions/gcc-$version" "$ENVS_ROOT/modules/gcc/default"
             ENVS_DEFAULT_GCC_VERSION="$version"
             ;;
         cuda)
             version="$(normalize_cuda_version "$version")"
-            local cuda_home
-            cuda_home="$(cuda_home_for "$version")"
-            assert_cuda_exists "$cuda_home"
             ln -sfn "versions/cuda-$version" "$ENVS_ROOT/modules/cuda/default"
             ENVS_DEFAULT_CUDA_VERSION="$version"
             ;;
         python)
             version="$(normalize_python_version "$version")"
-            local python_home
-            python_home="$(python_home_for "$version")"
-            assert_python_exists "$python_home"
             ln -sfn "versions/python-$version" "$ENVS_ROOT/modules/python/default"
             ENVS_DEFAULT_PYTHON_VERSION="$version"
             ;;
         node)
             version="$(normalize_node_version "$version")"
-            local node_home
-            node_home="$(node_home_for "$version")"
-            assert_node_exists "$node_home"
             ln -sfn "versions/node-$version" "$ENVS_ROOT/modules/node/default"
             ENVS_DEFAULT_NODE_VERSION="$version"
             ;;
         *) die "unknown module: $module" ;;
     esac
 
+    if ! module_enabled "$module"; then
+        module_set_version "$module" "$version"
+    fi
+    if [[ "$ENVS_LAST_ENABLED_MODULES_SET" == "1" ]]; then
+        remember_module_for_global_on "$module"
+    fi
+
     write_config
+    write_state
     write_profile
     info "default $module set to $version"
 }
@@ -1521,6 +1587,7 @@ use_module() {
 
     module_set_version "$module" "$version"
     module_set_enabled "$module" 1
+    sync_global_on_modules_from_current
     write_config
     write_state
     write_profile
@@ -1563,13 +1630,17 @@ enable_env() {
 
     if [[ -n "$requested" ]]; then
         enable_one_module "$requested"
+        sync_global_on_modules_from_current
         info "enabled $requested-$(module_selected_version "$requested")"
     else
-        local targets="$ENVS_LAST_ENABLED_MODULES"
+        local targets=""
         local module version home
         local enabled=""
 
-        if [[ -z "$targets" ]]; then
+        if [[ "$ENVS_LAST_ENABLED_MODULES_SET" == "1" ]]; then
+            merge_current_modules_into_global_on
+            targets="$ENVS_LAST_ENABLED_MODULES"
+        else
             for module in $ENVS_MODULES; do
                 version="$(module_selected_version "$module")"
                 version="${version:-$(module_default_version "$module")}"
@@ -1580,7 +1651,12 @@ enable_env() {
             done
         fi
 
-        [[ -n "$targets" ]] || die "no installed modules found. Run: envswitch fetch defaults"
+        if [[ -z "$targets" ]]; then
+            if [[ "$ENVS_LAST_ENABLED_MODULES_SET" == "1" ]]; then
+                die "no modules are selected for global on. Run: envswitch use <tool>"
+            fi
+            die "no installed modules found. Run: envswitch fetch defaults"
+        fi
 
         for module in $ENVS_MODULES; do
             module_set_enabled "$module" 0
@@ -1600,6 +1676,7 @@ enable_env() {
 
         [[ -n "$enabled" ]] || die "none of the saved modules are installed"
         ENVS_LAST_ENABLED_MODULES="$enabled"
+        ENVS_LAST_ENABLED_MODULES_SET=1
         info "enabled: $enabled"
     fi
 
@@ -1620,12 +1697,14 @@ disable_env() {
             *) die "unknown module: $requested" ;;
         esac
         module_set_enabled "$requested" 0
+        sync_global_on_modules_from_current
         info "disabled $requested"
     else
         local enabled
         enabled="$(current_enabled_modules)"
         if [[ -n "$enabled" ]]; then
             ENVS_LAST_ENABLED_MODULES="$enabled"
+            ENVS_LAST_ENABLED_MODULES_SET=1
         fi
         ENVS_GCC_ENABLED=0
         ENVS_CUDA_ENABLED=0

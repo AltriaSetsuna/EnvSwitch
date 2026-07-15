@@ -38,11 +38,14 @@ ENVS_PYTHON_VERSION='3.12.12'
 ENVS_NODE_ENABLED='1'
 ENVS_NODE_VERSION='24.18.0'
 ENVS_LAST_ENABLED_MODULES='cuda python node'
+ENVS_LAST_ENABLED_MODULES_SET='1'
 ```
 
 `ENVS_LAST_ENABLED_MODULES` lets global `envswitch off` pause all tools and
-global `envswitch on` restore the previous combination. Tool-specific commands
-only mutate the requested module.
+global `envswitch on` restore the previous combination. The accompanying
+`ENVS_LAST_ENABLED_MODULES_SET` flag distinguishes an intentionally empty set
+from a fresh configuration. Tool-specific commands mutate only the requested
+module and then synchronize the saved combination.
 
 Version 1 and 2 state is migrated automatically. A version 1 enabled state maps
 to GCC and CUDA enabled. Python starts disabled when migrating version 1, and
@@ -127,8 +130,10 @@ with `--provider conda`.
 - `envswitch off` records the enabled set and disables all tools.
 - `envswitch on` restores the recorded set. When no set has been recorded, it
   enables the default versions that are already installed.
-- `envswitch default <tool> <version>` changes the default but does not
-  implicitly change an enabled tool's selected version.
+- `envswitch default <tool> <version>` changes the configured default even when
+  that version is not installed yet, allowing `default` to be followed by
+  `fetch <tool>`. For a disabled tool it also selects that version for the next
+  global `on`; it does not replace the selected version of an enabled tool.
 - `envswitch fetch python` installs the default package list unless
   `--no-default-packages` is supplied. `fetch defaults` accepts the same option.
 

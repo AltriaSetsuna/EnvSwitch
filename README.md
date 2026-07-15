@@ -76,6 +76,7 @@ envswitch fetch gcc 12
 envswitch fetch gcc 14
 envswitch fetch gcc
 envswitch fetch cuda 12.8
+envswitch fetch cuda 13.2
 envswitch fetch cuda
 envswitch fetch cuda 12.8 --source global
 envswitch fetch cuda 12.8 --provider conda
@@ -107,6 +108,11 @@ envswitch default node 24.18.0
 
 For `fetch <tool>` and `use <tool>`, omitting the version selects that tool's
 configured default.
+
+`default <tool> <version>` may be run before the version is installed. A later
+`fetch <tool>` downloads that configured default; `use` and `on` still require
+the selected version to be installed and complete. For a disabled tool,
+changing the default also selects that version for the next global `on`.
 
 `install` adds a managed block to `~/.bashrc` and, when present or when zsh is
 the active shell, `~/.zshrc`. The block adds this repo's `bin/` directory to

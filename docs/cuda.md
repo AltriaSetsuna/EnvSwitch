@@ -10,6 +10,7 @@ Available versions:
 
 ```text
 modules/cuda/versions/cuda-12.8
+modules/cuda/versions/cuda-13.2
 ```
 
 This directory is a local install and is ignored by git.
@@ -50,6 +51,7 @@ Use NVIDIA's global download host:
 
 ```bash
 envswitch fetch cuda 12.8 --source global
+envswitch fetch cuda 13.2 --source global
 ```
 
 Try the Tsinghua CUDA mirror explicitly:
@@ -62,6 +64,7 @@ Use the conda package provider through Tsinghua Anaconda mirrors:
 
 ```bash
 envswitch fetch cuda 12.8 --provider conda
+envswitch fetch cuda 13.2 --provider conda
 ```
 
 Register an existing toolkit without copying it:
@@ -75,11 +78,18 @@ envswitch link cuda 12.8 /path/to/cuda-prefix
 CUDA versions must contain an executable `bin/nvcc`. This keeps `envswitch on`
 from silently enabling an incomplete toolkit directory.
 
+Before fetching CUDA, EnvSwitch reads the maximum CUDA version reported by
+`nvidia-smi`. It rejects a requested toolkit only when that version is newer
+than the installed driver supports. If `nvidia-smi` is unavailable or cannot
+query the driver, EnvSwitch warns and continues without the compatibility
+check.
+
 Use:
 
 ```bash
 envswitch fetch cuda
 envswitch fetch cuda 12.8
+envswitch fetch cuda 13.2
 envswitch use cuda
 envswitch use cuda 12.8
 envswitch on cuda

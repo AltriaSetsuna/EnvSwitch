@@ -23,8 +23,10 @@ tar \
 
 GCC12_HOME="$ROOT/modules/gcc/versions/gcc-12"
 CUDA128_HOME="$ROOT/modules/cuda/versions/cuda-12.8"
+CUDA132_HOME="$ROOT/modules/cuda/versions/cuda-13.2"
 PYTHON312_HOME="$ROOT/modules/python/versions/python-3.12.12"
 NODE2418_HOME="$ROOT/modules/node/versions/node-24.18.0"
+FAKE_CUDA_RUNFILE="$TMP_ROOT/cuda.run"
 
 mkdir -p \
     "$GCC12_HOME/bin" \
@@ -73,6 +75,25 @@ cat >"$FAKE_BIN/uv" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >"${ENVS_TEST_UV_LOG:?}"
 EOF
+cat >"$FAKE_BIN/nvidia-smi" <<'EOF'
+#!/usr/bin/env bash
+printf '| NVIDIA-SMI test  Driver Version: 595.84  CUDA Version: %s |\n' \
+    "${ENVS_TEST_CUDA_MAX_VERSION:-13.2}"
+EOF
+cat >"$FAKE_CUDA_RUNFILE" <<'EOF'
+#!/usr/bin/env bash
+for arg in "$@"; do
+    case "$arg" in
+        --toolkitpath=*) prefix="${arg#--toolkitpath=}" ;;
+    esac
+done
+mkdir -p "${prefix:?}/bin" "${prefix:?}/lib64"
+cat >"$prefix/bin/nvcc" <<'NVCC'
+#!/usr/bin/env bash
+printf 'Cuda compilation tools, release 13.2\n'
+NVCC
+chmod +x "$prefix/bin/nvcc"
+EOF
 chmod +x \
     "$GCC12_HOME/bin/x86_64-conda-linux-gnu-gcc" \
     "$GCC12_HOME/bin/x86_64-conda-linux-gnu-g++" \
@@ -81,10 +102,38 @@ chmod +x \
     "$PYTHON312_HOME/bin/pip3" \
     "$NODE2418_HOME/bin/node" \
     "$NODE2418_HOME/bin/npm" \
-    "$FAKE_BIN/uv"
+    "$FAKE_BIN/uv" \
+    "$FAKE_BIN/nvidia-smi" \
+    "$FAKE_CUDA_RUNFILE"
 
 export HOME="$HOME_DIR"
 export XDG_CONFIG_HOME="$HOME_DIR/.config"
+
+PATH="$FAKE_BIN:/usr/bin:/bin" \
+    "$ROOT/bin/envswitch" default cuda 13.2 >/dev/null
+test "$(readlink "$ROOT/modules/cuda/default")" = 'versions/cuda-13.2'
+grep -Fq "ENVS_DEFAULT_CUDA_VERSION='13.2'" "$XDG_CONFIG_HOME/EnvSwitch/config"
+
+PATH="$FAKE_BIN:/usr/bin:/bin" \
+    "$ROOT/bin/envswitch" fetch cuda --runfile "$FAKE_CUDA_RUNFILE" >/dev/null
+test -x "$CUDA132_HOME/bin/nvcc"
+
+PATH="$FAKE_BIN:/usr/bin:/bin" "$ROOT/bin/envswitch" on >/dev/null
+grep -Fq "ENVS_CUDA_ENABLED='1'" "$XDG_CONFIG_HOME/EnvSwitch/state"
+grep -Fq "ENVS_CUDA_VERSION='13.2'" "$XDG_CONFIG_HOME/EnvSwitch/state"
+PATH="$FAKE_BIN:/usr/bin:/bin" "$ROOT/bin/envswitch" off >/dev/null
+
+if ENVS_TEST_CUDA_MAX_VERSION=13.2 PATH="$FAKE_BIN:/usr/bin:/bin" \
+    "$ROOT/bin/envswitch" fetch cuda 13.3 --runfile "$FAKE_CUDA_RUNFILE" \
+    >"$TMP_ROOT/cuda-unsupported.log" 2>&1; then
+    printf 'CUDA 13.3 unexpectedly passed the driver compatibility check\n' >&2
+    exit 1
+fi
+grep -Fq 'unsupported CUDA toolkit version: 13.3' "$TMP_ROOT/cuda-unsupported.log"
+grep -Fq 'driver supports up to CUDA 13.2' "$TMP_ROOT/cuda-unsupported.log"
+
+PATH="$FAKE_BIN:/usr/bin:/bin" \
+    "$ROOT/bin/envswitch" default cuda 12.8 >/dev/null
 
 ENVS_TEST_UV_LOG="$UV_LOG" \
     PATH="$FAKE_BIN:/usr/bin:/bin" \
@@ -128,6 +177,7 @@ clean_bash 'envswitch status' | grep -E '^python[[:space:]]+disabled' >/dev/null
 clean_bash 'envswitch status' | grep -E '^node[[:space:]]+disabled' >/dev/null
 
 clean_bash 'envswitch use cuda >/dev/null; test -z "${CC:-}"; test "$CUDA_HOME" = "'"$CUDA128_HOME"'"; test -z "${ENVS_PYTHON_HOME:-}"'
+clean_bash 'envswitch on >/dev/null; test "$CUDA_HOME" = "'"$CUDA128_HOME"'"'
 clean_bash 'test -z "${CC:-}"; test "$CUDA_HOME" = "'"$CUDA128_HOME"'"'
 clean_bash 'envswitch status' | grep -E '^cuda[[:space:]]+enabled[[:space:]]+12[.]8' >/dev/null
 clean_bash 'envswitch status' | grep -E '^gcc[[:space:]]+disabled' >/dev/null
