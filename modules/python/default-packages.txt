@@ -17,6 +17,7 @@ pytest-cov
 hypothesis
 ruff
 python-dotenv
+pytest-asyncio
 
 # Common interactive and utility packages
 ipython
